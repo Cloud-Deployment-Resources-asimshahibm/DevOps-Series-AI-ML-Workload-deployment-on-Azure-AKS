@@ -1,4 +1,4 @@
-# DevOps-Series (AI/ML Workload Deployment on Kubernetes — AWS-EKS and Azure-AKS Platforms)
+# DevOps-Series (AI/ML Workload Deployment on Kubernetes — Azure-AKS Platform)
 
 **Terraform · Azure Kubernetes Service (AKS) · node auto-provisioning (CPU + GPU) · GitHub Actions (OIDC) · Argo CD + Helm · JupyterHub · Argo Workflows · Ray/KubeRay · Prometheus · Grafana · Loki · ELK · OpenCost · SLO error budgets**
 
