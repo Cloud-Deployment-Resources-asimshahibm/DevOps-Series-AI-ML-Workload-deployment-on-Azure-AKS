@@ -1,0 +1,23 @@
+hub:
+  config:
+    GitHubOAuthenticator:
+      oauth_callback_url: https://jupyter.ml.example.com/hub/oauth_callback   # <- your domain
+
+# Exposed through the Application Gateway (AGIC). Point a DNS CNAME for your
+# host at the gateway (terraform output app_gateway_fqdn) and provide the TLS
+# certificate as a Kubernetes secret (cert-manager / your PKI).
+ingress:
+  enabled: true
+  ingressClassName: azure-application-gateway
+  hosts:
+    - jupyter.ml.example.com
+  tls:
+    - hosts: [jupyter.ml.example.com]
+      secretName: jupyter-tls
+  annotations:
+    appgw.ingress.kubernetes.io/ssl-redirect: "true"
+    appgw.ingress.kubernetes.io/request-timeout: "3600"
+    appgw.ingress.kubernetes.io/health-probe-path: /hub/health
+
+cull:
+  timeout: 7200

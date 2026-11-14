@@ -1,0 +1,6 @@
+apiVersion: v2
+name: karpenter-nodepools
+description: AKS node auto-provisioning (Karpenter) AKSNodeClasses + NodePools for CPU (spot/regular) and NVIDIA GPU workloads
+type: application
+version: 1.0.0
+appVersion: "nap"

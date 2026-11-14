@@ -1,0 +1,20 @@
+# Dev: reach the hub with
+#   kubectl -n jupyterhub port-forward svc/proxy-public 8000:80
+# and register the GitHub OAuth app with callback http://localhost:8000/hub/oauth_callback
+hub:
+  config:
+    GitHubOAuthenticator:
+      oauth_callback_url: http://localhost:8000/hub/oauth_callback
+
+# To expose it through the Application Gateway instead (AGIC), set a host and a
+# TLS secret (cert-manager, or import a certificate into the gateway):
+# ingress:
+#   enabled: true
+#   ingressClassName: azure-application-gateway
+#   hosts: [jupyter.dev.example.com]
+#   tls:
+#     - hosts: [jupyter.dev.example.com]
+#       secretName: jupyter-tls
+#   annotations:
+#     appgw.ingress.kubernetes.io/ssl-redirect: "true"
+#     appgw.ingress.kubernetes.io/request-timeout: "3600"   # long-lived kernels / websockets

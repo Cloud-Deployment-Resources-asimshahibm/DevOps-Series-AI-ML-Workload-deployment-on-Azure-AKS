@@ -1,0 +1,9 @@
+apiVersion: v2
+name: platform-config
+description: >-
+  Cluster glue: External Secrets store (Azure Key Vault) + secrets (PostgreSQL,
+  OAuth), per-app Postgres database bootstrap Job, Workload ID service accounts
+  and shared Azure Files volumes.
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

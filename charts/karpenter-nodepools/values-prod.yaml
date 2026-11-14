@@ -1,0 +1,13 @@
+costTags:
+  Project: aiml
+  Environment: prod
+
+cpu:
+  capacityTypes: ["on-demand"]
+  limits:
+    cpu: "400"
+    memory: 1600Gi
+
+gpu:
+  limits:
+    nvidia.com/gpu: "16"

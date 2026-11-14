@@ -1,0 +1,13 @@
+loki:
+  limits_config:
+    retention_period: 720h   # 30d
+
+# storage account + serviceAccount client-id: set by Argo CD (cloudValues)
+
+singleBinary:
+  resources:
+    requests: { cpu: "1", memory: 2Gi }
+    limits: { memory: 8Gi }
+
+chunksCache: { enabled: true, allocatedMemory: 1024 }
+resultsCache: { enabled: true, allocatedMemory: 512 }

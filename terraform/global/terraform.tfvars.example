@@ -1,0 +1,11 @@
+subscription_id = "__SUBSCRIPTION_ID__"
+location        = "eastus2"
+project         = "aiml"
+
+github_org  = "Cloud-Deployment-Resources-asimshahibm"
+github_repo = "DevOps-Series-AI-ML-Workload-deployment-on-Azure-AKS"
+
+acr_sku = "Standard"
+
+# e.g. ["platform-team@example.com"]
+billing_alert_emails = []

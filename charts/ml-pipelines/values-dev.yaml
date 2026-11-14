@@ -1,0 +1,10 @@
+env: dev
+
+images:
+  training:
+    tag: "bootstrap"
+  ray:
+    tag: "bootstrap"
+
+schedule:
+  enabled: false   # dev retrains on demand (GitHub Actions "Run training pipeline")

@@ -1,0 +1,40 @@
+# Filled in by Argo CD from Terraform outputs (app-of-apps cloudValues):
+subnetId: ""               # /subscriptions/.../subnets/snet-aks
+
+# Cost allocation tags on every VM + disk NAP creates (Cost Management budgets
+# filter on these; keep in sync with Terraform tags)
+costTags:
+  Project: aiml
+  Environment: dev
+
+# AzureLinux (smaller, CIS-hardened) or Ubuntu. AKS installs the NVIDIA driver
+# + container toolkit on GPU SKUs; the GPU operator adds the device plugin + DCGM.
+imageFamily: AzureLinux
+
+cpu:
+  capacityTypes: ["spot", "on-demand"]
+  skuFamilies: ["D", "E", "F"]          # general purpose, memory, compute
+  minSkuVersion: 4                      # v5+ (Dv5/Ev5/Fsv2 newer generations)
+  limits:
+    cpu: "200"
+    memory: 800Gi
+  consolidateAfter: 1m
+  osDiskSizeGB: 128
+
+gpu:
+  capacityTypes: ["on-demand"]
+  # NVIDIA T4 / A10 / A100. Request GPU quota for these families first (runbook Phase 0).
+  skus:
+    - Standard_NC4as_T4_v3
+    - Standard_NC8as_T4_v3
+    - Standard_NC16as_T4_v3
+    - Standard_NV36ads_A10_v5
+    - Standard_NC24ads_A100_v4
+  limits:
+    nvidia.com/gpu: "8"
+  consolidateAfter: 5m
+  osDiskSizeGB: 256    # CUDA images are large
+
+# Disruption budget: never voluntarily replace more than 10% of nodes at once
+disruptionBudget: "10%"
+expireAfter: 720h          # recycle nodes every 30 days (new node image = patches)

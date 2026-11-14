@@ -1,0 +1,23 @@
+# Service account every notebook pod runs as (Workload ID: Blob data rw, models ro)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: jupyter-user
+  namespace: {{ .Values.jupyterhub.namespace }}
+  annotations:
+    azure.workload.identity/client-id: {{ required "azure.clientIds.jupyter-user is required" (index .Values.azure.clientIds "jupyter-user") | quote }}
+---
+# Team-wide shared datasets volume on Azure Files NFS, mounted into every notebook at ~/shared
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jupyter-shared
+  namespace: {{ .Values.jupyterhub.namespace }}
+  annotations:
+    argocd.argoproj.io/sync-options: Delete=false
+spec:
+  accessModes: ["ReadWriteMany"]
+  storageClassName: azurefile-nfs
+  resources:
+    requests:
+      storage: {{ .Values.jupyterhub.sharedVolumeSize }}

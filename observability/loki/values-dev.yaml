@@ -1,0 +1,5 @@
+loki:
+  limits_config:
+    retention_period: 168h
+
+# storage account + serviceAccount client-id: set by Argo CD (cloudValues)

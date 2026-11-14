@@ -1,0 +1,7 @@
+# Blob endpoint + serviceAccount client-ids (server, workflow): set by Argo CD (cloudValues)
+controller:
+  replicas: 2   # leader election
+
+server:
+  replicas: 2
+  # authModes: ["sso"]   # enable with Entra ID before exposing the UI

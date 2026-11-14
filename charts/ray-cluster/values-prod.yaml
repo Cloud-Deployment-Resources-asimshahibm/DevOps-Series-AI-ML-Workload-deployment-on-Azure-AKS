@@ -1,0 +1,6 @@
+image:
+  tag: "bootstrap"
+
+storage:
+  scratch:
+    size: 500Gi

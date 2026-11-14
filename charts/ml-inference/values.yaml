@@ -1,0 +1,84 @@
+# Defaults shared by every environment. Env files (values-dev.yaml /
+# values-prod.yaml) override only what differs. CI bumps image.tag in dev;
+# the promote workflow copies it to prod via PR.
+
+# image.repository, model.storeUri and serviceAccount.clientId are filled in by
+# Argo CD from Terraform outputs (argocd/app-of-apps cloudValues).
+image:
+  repository: ""   # <acr>.azurecr.io/aiml/ml-inference
+  tag: "bootstrap" # replaced by CI on first build
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
+
+model:
+  name: iris-classifier
+  storeUri: ""          # az://<storage-account>/models
+  version: latest       # pin a version to freeze serving
+  refreshSeconds: 60
+
+serviceAccount:
+  create: true
+  name: ml-inference
+  clientId: ""          # Workload ID aiml-<env>-ml-inference (Blob models, read-only)
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+
+ingress:
+  enabled: true
+  className: azure-application-gateway
+  host: ""              # empty = match any host (http://<appgw-fqdn>/)
+  tlsSecretName: ""     # set (with host) to enable HTTPS; certificate from cert-manager / your PKI
+  annotations: {}
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    memory: 1Gi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 65
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# node auto-provisioning (Karpenter) "cpu" NodePool label
+nodeSelector:
+  workload: ml-cpu
+tolerations: []
+
+topologySpreadConstraints:
+  enabled: true
+
+metrics:
+  serviceMonitor:
+    enabled: true
+    interval: 15s
+  prometheusRule:
+    enabled: true
+    latencyP95Seconds: 0.5
+    errorRatio: 0.05
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+extraEnv: []

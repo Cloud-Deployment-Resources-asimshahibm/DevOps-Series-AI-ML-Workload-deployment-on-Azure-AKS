@@ -1,0 +1,24 @@
+prometheus:
+  prometheusSpec:
+    replicas: 2
+    retention: 30d
+    retentionSize: 180GB
+    resources:
+      requests: { cpu: "2", memory: 8Gi }
+      limits: { memory: 16Gi }
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: managed-csi-premium
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 200Gi
+
+alertmanager:
+  alertmanagerSpec:
+    replicas: 3
+
+grafana:
+  # serviceAccount azure.workload.identity/client-id: set by Argo CD (cloudValues)
+  replicas: 1   # Grafana HA needs a shared DB; point grafana.ini [database] at PostgreSQL to scale out

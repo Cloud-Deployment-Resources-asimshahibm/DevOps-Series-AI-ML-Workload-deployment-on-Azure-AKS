@@ -1,0 +1,25 @@
+image:
+  tag: "bootstrap" # updated only by the promote-to-prod PR
+
+replicaCount: 3
+
+model:
+  refreshSeconds: 60
+
+# ingress:
+#   host: api.ml.example.com      # CNAME -> terraform output app_gateway_fqdn
+#   tlsSecretName: ml-api-tls
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    memory: 2Gi
+
+autoscaling:
+  minReplicas: 3
+  maxReplicas: 20
+
+podDisruptionBudget:
+  minAvailable: 2

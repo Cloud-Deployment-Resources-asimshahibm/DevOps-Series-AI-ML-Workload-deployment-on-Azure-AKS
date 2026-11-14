@@ -1,0 +1,230 @@
+fullnameOverride: kube-prometheus-stack
+
+crds:
+  enabled: true
+
+defaultRules:
+  create: true
+  rules:
+    etcd: false              # managed control plane
+    kubeScheduler: false
+    kubeControllerManager: false
+    kubeProxy: false
+
+kubeEtcd: { enabled: false }
+kubeScheduler: { enabled: false }
+kubeControllerManager: { enabled: false }
+kubeProxy: { enabled: false }
+
+prometheus:
+  prometheusSpec:
+    replicas: 1
+    retention: 15d
+    retentionSize: 45GB
+    scrapeInterval: 30s
+    # Discover ServiceMonitors / PodMonitors / rules from every namespace and app
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    probeSelectorNilUsesHelmValues: false
+    enableFeatures:
+      - exemplar-storage
+    nodeSelector:
+      workload: ml-cpu
+    resources:
+      requests: { cpu: "1", memory: 4Gi }
+      limits: { memory: 8Gi }
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: managed-csi-premium
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 50Gi
+
+alertmanager:
+  alertmanagerSpec:
+    replicas: 1
+    nodeSelector:
+      workload: system
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: managed-csi-premium
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 5Gi
+  config:
+    global:
+      resolve_timeout: 5m
+    route:
+      group_by: ["alertname", "namespace", "severity"]
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+      receiver: default
+      routes:
+        - receiver: "null"
+          matchers: ['alertname = "Watchdog"']
+        - receiver: "null"
+          matchers: ['alertname = "InfoInhibitor"']
+        - receiver: critical
+          matchers: ['severity = "critical"']
+    receivers:
+      - name: "null"
+      - name: default
+      # Add Slack/PagerDuty here, e.g. with an AlertmanagerConfig CR or:
+      # slack_configs:
+      #   - api_url_file: /etc/alertmanager/secrets/alertmanager-slack/url
+      #     channel: "#ml-platform-alerts"
+      #     send_resolved: true
+      - name: critical
+    inhibit_rules:
+      - source_matchers: ['severity = "critical"']
+        target_matchers: ['severity =~ "warning|info"']
+        equal: ["namespace", "alertname"]
+
+grafana:
+  enabled: true
+  replicas: 1
+  nodeSelector:
+    workload: system
+  admin:
+    existingSecret: grafana-admin       # synced from Key Vault by External Secrets
+    userKey: admin-user
+    passwordKey: admin-password
+  persistence:
+    enabled: true
+    storageClassName: managed-csi-premium
+    size: 10Gi
+  # Workload ID for the Azure Monitor datasource (client-id annotation: cloudValues)
+  podLabels:
+    azure.workload.identity/use: "true"
+  defaultDashboardsTimezone: browser
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+      searchNamespace: ALL
+      folderAnnotation: grafana_folder
+      provider:
+        foldersFromFilesStructure: true
+    datasources:
+      enabled: true
+  additionalDataSources:
+    - name: Loki
+      uid: loki
+      type: loki
+      access: proxy
+      url: http://loki-gateway.monitoring.svc.cluster.local
+      jsonData:
+        maxLines: 2000
+        derivedFields:
+          - name: request_id
+            matcherRegex: '"request_id":\s*"(\w+)"'
+            url: '$${__value.raw}'
+    - name: Azure Monitor
+      uid: azure-monitor
+      type: grafana-azure-monitor-datasource
+      access: proxy
+      jsonData:
+        azureAuthType: workloadidentity   # identity aiml-<env>-grafana, Monitoring Reader
+        # Application Gateway, PostgreSQL, Storage, Key Vault and VM metrics + Logs (Log Analytics)
+    - name: Elasticsearch (ELK)
+      uid: elasticsearch
+      type: elasticsearch
+      access: proxy
+      url: https://logging-es-http.logging.svc.cluster.local:9200
+      basicAuth: true
+      basicAuthUser: grafana          # read-only ES user (file realm, role "viewer")
+      jsonData:
+        index: "logs-k8s-*"
+        timeField: "@timestamp"
+        tlsSkipVerify: true
+      secureJsonData:
+        basicAuthPassword: $__file{/etc/secrets/es/password}
+  extraSecretMounts:
+    - name: es-grafana-user
+      secretName: grafana-es-credentials    # External Secrets (platform-config)
+      mountPath: /etc/secrets/es
+      readOnly: true
+      optional: true
+  grafana.ini:
+    azure:
+      workload_identity_enabled: true
+    server:
+      root_url: "%(protocol)s://%(domain)s/"
+    analytics:
+      check_for_updates: false
+    users:
+      viewers_can_edit: false
+
+prometheus-node-exporter:
+  tolerations:
+    - operator: Exists      # run on GPU-tainted nodes too
+
+kube-state-metrics:
+  nodeSelector:
+    workload: system
+  # Node auto-provisioning (managed Karpenter) state as metrics:
+  #   karpenter_nodepool_{limit,usage}_{cpu,memory,gpu}, karpenter_nodeclaim_condition,
+  #   karpenter_nodeclaim_created_timestamp_seconds
+  rbac:
+    extraRules:
+      - apiGroups: ["karpenter.sh"]
+        resources: ["nodepools", "nodeclaims"]
+        verbs: ["list", "watch"]
+  customResourceState:
+    enabled: true
+    config:
+      spec:
+        resources:
+          - groupVersionKind: { group: karpenter.sh, version: v1, kind: NodePool }
+            metricNamePrefix: karpenter_nodepool
+            labelsFromPath:
+              nodepool: [metadata, name]
+            metrics:
+              - name: limit_cpu
+                help: "NodePool CPU limit (cores)"
+                each: { type: Gauge, gauge: { path: [spec, limits, cpu] } }
+              - name: usage_cpu
+                help: "CPU currently provisioned by the NodePool (cores)"
+                each: { type: Gauge, gauge: { path: [status, resources, cpu] } }
+              - name: limit_memory
+                help: "NodePool memory limit (bytes)"
+                each: { type: Gauge, gauge: { path: [spec, limits, memory] } }
+              - name: usage_memory
+                help: "Memory currently provisioned by the NodePool (bytes)"
+                each: { type: Gauge, gauge: { path: [status, resources, memory] } }
+              - name: limit_gpu
+                help: "NodePool GPU limit"
+                each: { type: Gauge, gauge: { path: [spec, limits, nvidia.com/gpu] } }
+              - name: usage_gpu
+                help: "GPUs currently provisioned by the NodePool"
+                each: { type: Gauge, gauge: { path: [status, resources, nvidia.com/gpu] } }
+          - groupVersionKind: { group: karpenter.sh, version: v1, kind: NodeClaim }
+            metricNamePrefix: karpenter_nodeclaim
+            labelsFromPath:
+              nodeclaim: [metadata, name]
+              nodepool: [metadata, labels, karpenter.sh/nodepool]
+            metrics:
+              - name: condition
+                help: "NodeClaim status conditions (1 = True)"
+                each:
+                  type: Gauge
+                  gauge:
+                    path: [status, conditions]
+                    labelsFromPath:
+                      type: [type]
+                      reason: [reason]
+                    valueFrom: [status]
+              - name: created_timestamp_seconds
+                help: "NodeClaim creation time"
+                each: { type: Gauge, gauge: { path: [metadata, creationTimestamp] } }
+  # expose node labels -> cost/performance by NodePool, capacity type, instance type
+  metricLabelsAllowlist:
+    - nodes=[karpenter.sh/nodepool,karpenter.sh/capacity-type,kubernetes.azure.com/agentpool,kubernetes.azure.com/scalesetpriority,node.kubernetes.io/instance-type,workload,topology.kubernetes.io/zone]
+    - pods=[app.kubernetes.io/name,app.kubernetes.io/part-of]

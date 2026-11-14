@@ -1,0 +1,5 @@
+replicaCount: 1
+webhook:
+  replicaCount: 1
+# serviceAccount azure.workload.identity/client-id is set by Argo CD from
+# Terraform outputs (argocd/app-of-apps values.yaml -> cloudValues)

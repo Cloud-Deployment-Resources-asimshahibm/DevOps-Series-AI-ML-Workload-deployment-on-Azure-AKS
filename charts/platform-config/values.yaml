@@ -1,0 +1,37 @@
+env: dev
+
+# Filled in by Argo CD from Terraform outputs (app-of-apps cloudValues)
+azure:
+  tenantId: ""
+  keyVaultUri: ""          # https://aiml-<env>-kv-<suffix>.vault.azure.net/
+  clientIds: {}            # workload identity client ids, e.g. jupyter-user
+
+# Key Vault secrets written by Terraform (JSON values):
+#   postgres-master, postgres-jupyterhub, postgres-argo-workflows,
+#   grafana-admin, jupyterhub-github-oauth, elasticsearch-grafana
+
+# Stable DNS alias for PostgreSQL created by Terraform (ExternalName service)
+postgres:
+  host: platform-postgres.platform-system.svc.cluster.local
+  port: 5432
+  apps:
+    - jupyterhub
+    - argo_workflows
+
+externalSecrets:
+  refreshInterval: 1h
+
+jupyterhub:
+  namespace: jupyterhub
+  sharedVolumeSize: 200Gi
+  # GitHub OAuth app (created manually, runbook Phase 6): stored in
+  # Key Vault as jupyterhub-github-oauth {client_id, client_secret}
+  githubOauthSecret: true
+
+monitoring:
+  namespace: monitoring
+  # Key Vault grafana-admin {admin-user, admin-password}
+  grafanaAdminSecret: true
+
+argo:
+  namespace: argo

@@ -1,0 +1,14 @@
+image:
+  tag: "bootstrap"
+
+replicaCount: 1
+
+model:
+  refreshSeconds: 30
+
+autoscaling:
+  minReplicas: 1
+  maxReplicas: 3
+
+podDisruptionBudget:
+  enabled: false

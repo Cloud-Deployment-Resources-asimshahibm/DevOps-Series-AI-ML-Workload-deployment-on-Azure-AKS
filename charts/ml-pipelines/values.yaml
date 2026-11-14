@@ -1,0 +1,46 @@
+env: dev
+
+# repository / clientId / storage.account / ciPrincipalId are filled in by
+# Argo CD from Terraform outputs (argocd/app-of-apps cloudValues)
+images:
+  training:
+    repository: ""          # <acr>.azurecr.io/aiml/ml-training
+    tag: "bootstrap"        # bumped by CI
+  ray:
+    repository: ""          # <acr>.azurecr.io/aiml/ml-ray
+    tag: "bootstrap"        # bumped by CI
+
+serviceAccount:
+  name: ml-training
+  clientId: ""              # Workload ID aiml-<env>-ml-training
+
+storage:
+  account: ""               # aiml<env>data<suffix>: containers data, models, artifacts
+
+model:
+  name: iris-classifier
+  minAccuracy: "0.85"
+
+ray:
+  clusterName: ml-ray       # existing RayCluster (charts/ray-cluster) in namespace "ray"
+  namespace: ray
+
+schedule:
+  enabled: true
+  cron: "0 3 * * *"         # nightly retrain at 03:00 UTC
+  timezone: UTC
+  useRay: "true"
+  autoPromote: "true"
+
+# Object id of the GitHub Actions CI managed identity (aiml-gha-ci)
+ciPrincipalId: ""
+
+nodeSelector:
+  workload: ml-cpu
+
+resources:
+  requests:
+    cpu: "1"
+    memory: 2Gi
+  limits:
+    memory: 4Gi

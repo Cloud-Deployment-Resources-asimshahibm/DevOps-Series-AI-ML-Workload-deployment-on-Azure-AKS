@@ -1,0 +1,101 @@
+{{- range $name, $cfg := dict "cpu" .Values.cpu "gpu" .Values.gpu }}
+---
+apiVersion: karpenter.azure.com/v1beta1
+kind: AKSNodeClass
+metadata:
+  name: {{ $name }}
+spec:
+  imageFamily: {{ $.Values.imageFamily }}
+  osDiskSizeGB: {{ $cfg.osDiskSizeGB }}
+  {{- with $.Values.subnetId }}
+  vnetSubnetID: {{ . }}         # same subnet as the system pool (service endpoints, NSG)
+  {{- end }}
+  tags:
+    nodepool: {{ $name }}       # cost allocation: GPU vs CPU spend in Cost Management
+    {{- range $k, $v := $.Values.costTags }}
+    {{ $k }}: {{ $v | quote }}
+    {{- end }}
+{{- end }}
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: cpu
+spec:
+  weight: 10
+  template:
+    metadata:
+      labels:
+        workload: ml-cpu
+    spec:
+      nodeClassRef:
+        group: karpenter.azure.com
+        kind: AKSNodeClass
+        name: cpu
+      expireAfter: {{ .Values.expireAfter }}
+      requirements:
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: {{ toJson .Values.cpu.capacityTypes }}
+        - key: karpenter.azure.com/sku-family
+          operator: In
+          values: {{ toJson .Values.cpu.skuFamilies }}
+        - key: karpenter.azure.com/sku-version
+          operator: Gt
+          values: [{{ .Values.cpu.minSkuVersion | quote }}]
+        - key: karpenter.azure.com/sku-cpu
+          operator: Gt
+          values: ["3"]
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64"]
+  limits:
+    {{- toYaml .Values.cpu.limits | nindent 4 }}
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: {{ .Values.cpu.consolidateAfter }}
+    budgets:
+      - nodes: {{ .Values.disruptionBudget | quote }}
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: gpu
+spec:
+  weight: 20
+  template:
+    metadata:
+      labels:
+        workload: ml-gpu
+        nvidia.com/gpu.present: "true"
+    spec:
+      nodeClassRef:
+        group: karpenter.azure.com
+        kind: AKSNodeClass
+        name: gpu
+      expireAfter: {{ .Values.expireAfter }}
+      taints:
+        - key: nvidia.com/gpu
+          value: "true"
+          effect: NoSchedule
+      requirements:
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: {{ toJson .Values.gpu.capacityTypes }}
+        - key: karpenter.azure.com/sku-gpu-manufacturer
+          operator: In
+          values: ["nvidia"]
+        - key: karpenter.azure.com/sku-name
+          operator: In
+          values: {{ toJson .Values.gpu.skus }}
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64"]
+  limits:
+    {{- toYaml .Values.gpu.limits | nindent 4 }}
+  disruption:
+    # GPU jobs are long-running and expensive to interrupt: only reclaim empty nodes
+    consolidationPolicy: WhenEmpty
+    consolidateAfter: {{ .Values.gpu.consolidateAfter }}
+    budgets:
+      - nodes: {{ .Values.disruptionBudget | quote }}

@@ -1,0 +1,13 @@
+costTags:
+  Project: aiml
+  Environment: dev
+
+cpu:
+  capacityTypes: ["spot", "on-demand"]   # Spot first in dev
+  limits:
+    cpu: "64"
+    memory: 256Gi
+
+gpu:
+  limits:
+    nvidia.com/gpu: "2"

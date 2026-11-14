@@ -1,0 +1,243 @@
+env: dev
+project: ml-platform
+repoURL: https://github.com/Cloud-Deployment-Resources-asimshahibm/DevOps-Series-AI-ML-Workload-deployment-on-Azure-AKS.git
+revision: main
+
+# Azure facts that Git cannot know (generated client ids, globally unique names).
+# Terraform passes the real values to the root Application (modules/platform,
+# helm.valuesObject.cloud); these placeholders only make offline rendering work.
+# Each app below may declare `cloudValues`: a template rendered against these
+# facts and handed to the child Application as helm.valuesObject.
+cloud:
+  provider: azure
+  tenantId: 00000000-0000-0000-0000-000000000000
+  subscriptionId: 00000000-0000-0000-0000-000000000000
+  location: eastus2
+  resourceGroup: aiml-dev-rg
+  nodeResourceGroup: aiml-dev-nodes-rg
+  clusterName: aiml-dev
+  aksSubnetId: /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/aiml-dev-rg/providers/Microsoft.Network/virtualNetworks/aiml-dev-vnet/subnets/snet-aks
+  vnetCidr: 10.10.0.0/16
+  storageAccount: aimldevdataexample
+  blobEndpoint: https://aimldevdataexample.blob.core.windows.net/
+  keyVaultName: aiml-dev-kv-example
+  keyVaultUri: https://aiml-dev-kv-example.vault.azure.net/
+  acrLoginServer: aimlexampleacr.azurecr.io
+  appGatewayFqdn: aiml-dev-ml.eastus2.cloudapp.azure.com
+  ciPrincipalId: 00000000-0000-0000-0000-000000000001
+  clientIds:
+    ml-training: 00000000-0000-0000-0000-000000000011
+    ml-inference: 00000000-0000-0000-0000-000000000012
+    jupyter-user: 00000000-0000-0000-0000-000000000013
+    argo-workflows: 00000000-0000-0000-0000-000000000014
+    loki: 00000000-0000-0000-0000-000000000015
+    grafana: 00000000-0000-0000-0000-000000000016
+    external-secrets: 00000000-0000-0000-0000-000000000017
+
+# Every component of the platform. Three kinds:
+#   chart:      third-party Helm chart + our values from Git ($values/<values>/values[-env].yaml)
+#   path:       local Helm chart in this repo (values.yaml + values-<env>.yaml)
+#   kustomize:  plain manifests / kustomization in this repo
+# Optional per app: cloudValues (see `cloud` above).
+#
+# Sync waves (lower first; a wave waits until the previous one is Healthy):
+#  -30 NAP node pools, secrets operator     -25 platform-config (namespaces, secrets, DB init)
+#  -20 Prometheus/Grafana (CRDs)        -15 operators: GPU, ECK, KubeRay, Loki
+#  -10 Argo Workflows, Alloy, ELK, OpenCost, SLO/cost rules, dashboards   -5 JupyterHub
+#    0 ML workloads: Ray cluster, pipelines, inference
+apps:
+  # ------------------------------------------------------------- foundation
+  karpenter-nodepools:
+    enabled: true
+    wave: -30
+    namespace: kube-system
+    path: charts/karpenter-nodepools
+    cloudValues: |
+      subnetId: {{ .Values.cloud.aksSubnetId }}
+
+  external-secrets:
+    enabled: true
+    wave: -30
+    namespace: external-secrets
+    chart: { repo: https://charts.external-secrets.io, name: external-secrets, version: 0.12.1 }
+    values: platform/external-secrets
+    cloudValues: |
+      serviceAccount:
+        annotations:
+          azure.workload.identity/client-id: {{ index .Values.cloud.clientIds "external-secrets" }}
+
+  platform-config:
+    enabled: true
+    wave: -25
+    namespace: platform-system
+    path: charts/platform-config
+    cloudValues: |
+      azure:
+        tenantId: {{ .Values.cloud.tenantId }}
+        keyVaultUri: {{ .Values.cloud.keyVaultUri }}
+        clientIds:
+          jupyter-user: {{ index .Values.cloud.clientIds "jupyter-user" }}
+
+  # ------------------------------------------------------------- observability
+  kube-prometheus-stack:
+    enabled: true
+    wave: -20
+    namespace: monitoring
+    chart: { repo: https://prometheus-community.github.io/helm-charts, name: kube-prometheus-stack, version: 66.2.1 }
+    values: observability/kube-prometheus-stack
+    cloudValues: |
+      grafana:
+        serviceAccount:
+          annotations:
+            azure.workload.identity/client-id: {{ index .Values.cloud.clientIds "grafana" }}
+    syncOptions: ["ServerSideApply=true"]   # CRDs exceed client-side apply annotation limit
+
+  loki:
+    enabled: true
+    wave: -15
+    namespace: monitoring
+    chart: { repo: https://grafana.github.io/helm-charts, name: loki, version: 6.24.0 }
+    values: observability/loki
+    cloudValues: |
+      loki:
+        storage:
+          azure:
+            accountName: {{ .Values.cloud.storageAccount }}
+      serviceAccount:
+        annotations:
+          azure.workload.identity/client-id: {{ index .Values.cloud.clientIds "loki" }}
+
+  alloy:
+    enabled: true
+    wave: -10
+    namespace: monitoring
+    chart: { repo: https://grafana.github.io/helm-charts, name: alloy, version: 0.10.1 }
+    values: observability/alloy
+
+  observability-extras:
+    enabled: true
+    wave: -10
+    namespace: monitoring
+    kustomize: observability/extras     # Grafana dashboards, extra ServiceMonitors, platform alerts
+
+  observability-rules:
+    enabled: true
+    wave: -10
+    namespace: monitoring
+    path: charts/observability-rules     # SLO/SLI error budgets + cost recording rules & alerts
+
+  opencost:
+    enabled: true
+    wave: -10
+    namespace: opencost
+    chart: { repo: https://opencost.github.io/opencost-helm-chart, name: opencost, version: 2.5.33 }
+    values: observability/opencost
+
+  eck-operator:
+    enabled: true
+    wave: -15
+    namespace: elastic-system
+    chart: { repo: https://helm.elastic.co, name: eck-operator, version: 2.16.0 }
+    values: platform/eck-operator
+    syncOptions: ["ServerSideApply=true"]
+
+  elastic-stack:
+    enabled: true
+    wave: -10
+    namespace: logging
+    path: charts/elastic-stack
+    syncOptions: ["SkipDryRunOnMissingResource=true"]
+
+  # ------------------------------------------------------------- compute
+  gpu-operator:
+    enabled: true
+    wave: -15
+    namespace: gpu-operator
+    chart: { repo: https://helm.ngc.nvidia.com/nvidia, name: gpu-operator, version: v24.9.1 }
+    values: platform/gpu-operator
+    syncOptions: ["ServerSideApply=true"]
+
+  kuberay-operator:
+    enabled: true
+    wave: -15
+    namespace: ray-system
+    chart: { repo: https://ray-project.github.io/kuberay-helm/, name: kuberay-operator, version: 1.2.2 }
+    values: platform/kuberay-operator
+    syncOptions: ["ServerSideApply=true"]
+
+  # ------------------------------------------------------------- ML tooling
+  argo-workflows:
+    enabled: true
+    wave: -10
+    namespace: argo
+    chart: { repo: https://argoproj.github.io/argo-helm, name: argo-workflows, version: 0.45.1 }
+    values: platform/argo-workflows
+    cloudValues: |
+      artifactRepository:
+        azure:
+          endpoint: {{ trimSuffix "/" .Values.cloud.blobEndpoint }}
+      server:
+        serviceAccount:
+          annotations:
+            azure.workload.identity/client-id: {{ index .Values.cloud.clientIds "argo-workflows" }}
+      workflow:
+        serviceAccount:
+          annotations:
+            azure.workload.identity/client-id: {{ index .Values.cloud.clientIds "argo-workflows" }}
+    syncOptions: ["ServerSideApply=true"]
+
+  jupyterhub:
+    enabled: true
+    wave: -5
+    namespace: jupyterhub
+    chart: { repo: https://hub.jupyter.org/helm-chart/, name: jupyterhub, version: 4.0.0 }
+    values: platform/jupyterhub
+    # z2jh generates its hub secret with `lookup`, which Argo CD cannot run;
+    # ignore drift so the cookie secret is not rotated on every sync.
+    ignoreDifferences:
+      - kind: Secret
+        name: hub
+        jsonPointers: ["/data"]
+    syncOptions: ["RespectIgnoreDifferences=true"]
+
+  # ------------------------------------------------------------- ML workloads
+  ray-cluster:
+    enabled: true
+    wave: 0
+    namespace: ray
+    path: charts/ray-cluster
+    cloudValues: |
+      image:
+        repository: {{ .Values.cloud.acrLoginServer }}/aiml/ml-ray
+      serviceAccount:
+        clientId: {{ index .Values.cloud.clientIds "ml-training" }}
+
+  ml-pipelines:
+    enabled: true
+    wave: 0
+    namespace: ml-training
+    path: charts/ml-pipelines
+    cloudValues: |
+      images:
+        training:
+          repository: {{ .Values.cloud.acrLoginServer }}/aiml/ml-training
+        ray:
+          repository: {{ .Values.cloud.acrLoginServer }}/aiml/ml-ray
+      serviceAccount:
+        clientId: {{ index .Values.cloud.clientIds "ml-training" }}
+      storage:
+        account: {{ .Values.cloud.storageAccount }}
+      ciPrincipalId: {{ .Values.cloud.ciPrincipalId | quote }}
+
+  ml-inference:
+    enabled: true
+    wave: 0
+    namespace: ml-serving
+    path: charts/ml-inference
+    cloudValues: |
+      image:
+        repository: {{ .Values.cloud.acrLoginServer }}/aiml/ml-inference
+      model:
+        storeUri: az://{{ .Values.cloud.storageAccount }}/models
+      serviceAccount:
+        clientId: {{ index .Values.cloud.clientIds "ml-inference" }}
